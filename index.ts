@@ -1,7 +1,5 @@
 import puppeteer, { Browser, Page } from 'puppeteer';
 import fs from 'fs';
-// @ts-ignore
-import htmlContent from './src/index.html';
 
 (async (): Promise<void> => {
   const browser: Browser = await puppeteer.launch({
@@ -9,10 +7,17 @@ import htmlContent from './src/index.html';
   });
   const page: Page = await browser.newPage();
 
-  await page.setContent(htmlContent);
+  await page.setRequestInterception(true);
+  await page.goto('chrome://newtab');
+
+  page.on('request', req => {
+    if (req.url().startsWith('blob:')) {
+      console.log(req.url());
+    }
+    req.continue();
+  });
 
   const res: any = await page.evaluate(fs.readFileSync('src/script.js', 'utf8'));
-  console.log(res);
 
   await browser.close();
 })();
