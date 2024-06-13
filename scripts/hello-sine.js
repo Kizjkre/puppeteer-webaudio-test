@@ -1,24 +1,19 @@
 import audioBufferToWav from './audioBufferToWav.js';
+import concat from './concat.js';
 
 export default async () => {
   const ctx = new AudioContext();
-
+  await ctx.audioWorklet.addModule('./scripts/recorder.js');
   const helloSine = new OscillatorNode(ctx);
-  const destination = new MediaStreamAudioDestinationNode(ctx);
+  const recorder = new AudioWorkletNode(ctx, 'recorder');
 
-// helloSine.connect(ctx.destination);
-  helloSine.connect(destination);
+  helloSine.connect(recorder).connect(ctx.destination);
 
-  const recorder = new MediaRecorder(destination.stream);
-  const chunks = [];
-
-  recorder.ondataavailable = e => {
-    if (e.data.size > 0) {
-      chunks.push(e.data);
-    }
+  const arrays = [];
+  recorder.port.onmessage = e => {
+    !(e.data.channel in arrays) && (arrays[e.data.channel] = []);
+    arrays[e.data.channel].push(e.data.data);
   };
-
-  recorder.start();
 
   const start = performance.now();
 
@@ -29,10 +24,18 @@ export default async () => {
 
   const end = performance.now();
 
-  recorder.stop();
+  const res = [];
+  arrays.forEach((array, i) => res[i] = concat(...array));
 
-  const blob = await new Promise(resolve => recorder.onstop = async () =>
-    resolve(audioBufferToWav(await ctx.decodeAudioData(await chunks[0].arrayBuffer()), false)));
+  const buf = new AudioBuffer({
+    length: res[0].byteLength,
+    sampleRate: ctx.sampleRate,
+    numberOfChannels: res.length
+  });
+
+  res.forEach((array, i) => buf.copyToChannel(array, i));
+
+  const blob = audioBufferToWav(buf, false);
 
   await ctx.close();
 
